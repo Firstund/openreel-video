@@ -72,11 +72,11 @@ export class EditingSession implements EditingHost {
   async runJob() { return { ok: false, error: "This job is unavailable in the local AI workspace" }; }
   requestExport(): void { this.exportRequested = true; }
   replaceDraft(project: Project): void { this.draft = project; this.hasChanges = true; }
-  async relinkMedia(mediaId: string, file: File): Promise<void> {
+  async relinkMedia(mediaId: string, file: File, options: { waveform?: boolean; onStage?: (stage: string) => void } = {}): Promise<void> {
     const old = this.draft.mediaLibrary.items.find((m) => m.id === mediaId);
     if (!old) throw new Error("Missing media reference");
     if (!getMediaBridge().isInitialized()) await initializeMediaBridge();
-    const result = await getMediaBridge().importFile(file, true);
+    const result = await getMediaBridge().importFile(file, options.waveform ?? true, false, options.onStage);
     if (!result.success || !result.media) throw new Error(result.error ?? "Could not decode media");
     const decoded = result.media;
     const type = decoded.metadata.hasVideo ? "video" : decoded.metadata.hasAudio ? "audio" : "image";

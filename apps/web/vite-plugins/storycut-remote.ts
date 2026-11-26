@@ -67,84 +67,109 @@ function lanAddresses(): string[] {
       if (item.family === "IPv4" && !item.internal) out.push(item.address);
     }
   }
-  return out.sort((a, b) => Number(a.startsWith("100.")) - Number(b.startsWith("100.")));
+  const rank = (ip: string) => (ipKind(ip).startsWith("같은") ? 0 : ipKind(ip).startsWith("Tail") ? 1 : 2);
+  return out.sort((a, b) => rank(a) - rank(b));
 }
 
-/** Password gate + friendly startup message. Only active in remote mode. */
+type Middlewares = { use: (fn: (req: IncomingMessage, res: ServerResponse, next: () => void) => void) => void };
+
+function ipKind(ip: string): string {
+  const [a, b] = ip.split(".").map(Number);
+  if (a === 100 && b >= 64 && b <= 127) return "Tailscale     ";
+  if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) return "같은 와이파이 ";
+  return "공인 IP       ";
+}
+
+function installMiddlewares(middlewares: Middlewares): string | null {
+  // `/storycut` without the trailing slash would break the relative URLs of the story-cut page.
+  middlewares.use((req, res, next) => {
+    const url = req.url || "/";
+    if (/^\/storycut(\?|$)/.test(url)) {
+      res.statusCode = 302;
+      res.setHeader("Location", "/storycut/" + url.slice("/storycut".length));
+      res.end();
+      return;
+    }
+    next();
+  });
+  if (!isRemote) return null;
+  const token = readAccessToken();
+  middlewares.use((req, res, next) => {
+    const url = new URL(req.url || "/", "https://local");
+    if (url.pathname === "/__openreel_login" && req.method === "POST") {
+      let body = "";
+      req.on("data", (chunk) => { body += chunk; if (body.length > 4096) req.destroy(); });
+      req.on("end", () => {
+        const given = new URLSearchParams(body).get("token")?.trim() || "";
+        if (same(given, token)) {
+          res.statusCode = 303;
+          res.setHeader("Set-Cookie", cookieHeader(token));
+          res.setHeader("Location", "/");
+        } else {
+          res.statusCode = 401;
+          res.setHeader("Content-Type", "text/html; charset=utf-8");
+          res.end(LOGIN_PAGE(true));
+          return;
+        }
+        res.end();
+      });
+      return;
+    }
+    const queryToken = url.searchParams.get("token") || url.searchParams.get("key");
+    if (queryToken && same(queryToken, token)) {
+      url.searchParams.delete("token");
+      url.searchParams.delete("key");
+      res.statusCode = 302;
+      res.setHeader("Set-Cookie", cookieHeader(token));
+      res.setHeader("Location", url.pathname + (url.search || ""));
+      res.end();
+      return;
+    }
+    const auth = req.headers.authorization || "";
+    const bearer = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
+    if (same(cookieValue(req, COOKIE), token) || (bearer && same(bearer, token))) {
+      next();
+      return;
+    }
+    res.statusCode = 401;
+    const wantsPage = (req.headers.accept || "").includes("text/html");
+    res.setHeader("Content-Type", wantsPage ? "text/html; charset=utf-8" : "text/plain; charset=utf-8");
+    res.end(wantsPage ? LOGIN_PAGE(false) : "password required");
+  });
+  return token;
+}
+
+function announce(httpServer: { once: (e: string, cb: () => void) => void } | null | undefined, port: number, token: string, log: (msg: string) => void) {
+  httpServer?.once("listening", () => {
+    setTimeout(() => {
+      const ips = lanAddresses();
+      const lines = [
+        "",
+        "  휴대폰 접속 (OpenReel + story-cut):",
+        ...ips.map((ip) => `    ${ipKind(ip)} https://${ip}:${port}/storycut/?token=${token}`),
+        `  접속 비밀번호: ${token}`,
+        "  처음 열면 '안전하지 않음' 경고가 나옵니다. [고급] → [계속 진행]을 누르세요. (이 PC가 만든 인증서라서 그렇습니다)",
+        ...(ips.some((ip) => ipKind(ip).startsWith("공인"))
+          ? ["  주의: 이 PC는 공인 IP라 인터넷에서도 접속될 수 있습니다. 비밀번호가 막아 주지만 주소를 남에게 보내지 마세요."]
+          : []),
+        "",
+      ];
+      log(lines.join("\n"));
+    }, 300);
+  });
+}
+
+/** Password gate + friendly startup message (dev server and `vite preview`). Only active in remote mode. */
 export function storyCutRemotePlugin(): Plugin {
   return {
     name: "openreel-storycut-remote",
-    apply: "serve",
     configureServer(server) {
-      // `/storycut` without the trailing slash would break the relative URLs of the story-cut page.
-      server.middlewares.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
-        const url = req.url || "/";
-        if (/^\/storycut(\?|$)/.test(url)) {
-          res.statusCode = 302;
-          res.setHeader("Location", "/storycut/" + url.slice("/storycut".length));
-          res.end();
-          return;
-        }
-        next();
-      });
-      if (!isRemote) return;
-      const token = readAccessToken();
-      server.middlewares.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
-        const url = new URL(req.url || "/", "https://local");
-        if (url.pathname === "/__openreel_login" && req.method === "POST") {
-          let body = "";
-          req.on("data", (chunk) => { body += chunk; if (body.length > 4096) req.destroy(); });
-          req.on("end", () => {
-            const given = new URLSearchParams(body).get("token")?.trim() || "";
-            if (same(given, token)) {
-              res.statusCode = 303;
-              res.setHeader("Set-Cookie", cookieHeader(token));
-              res.setHeader("Location", "/");
-            } else {
-              res.statusCode = 401;
-              res.setHeader("Content-Type", "text/html; charset=utf-8");
-              res.end(LOGIN_PAGE(true));
-              return;
-            }
-            res.end();
-          });
-          return;
-        }
-        const queryToken = url.searchParams.get("token") || url.searchParams.get("key");
-        if (queryToken && same(queryToken, token)) {
-          url.searchParams.delete("token");
-          url.searchParams.delete("key");
-          res.statusCode = 302;
-          res.setHeader("Set-Cookie", cookieHeader(token));
-          res.setHeader("Location", url.pathname + (url.search || ""));
-          res.end();
-          return;
-        }
-        const auth = req.headers.authorization || "";
-        const bearer = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
-        if (same(cookieValue(req, COOKIE), token) || (bearer && same(bearer, token))) {
-          next();
-          return;
-        }
-        res.statusCode = 401;
-        const wantsPage = (req.headers.accept || "").includes("text/html");
-        res.setHeader("Content-Type", wantsPage ? "text/html; charset=utf-8" : "text/plain; charset=utf-8");
-        res.end(wantsPage ? LOGIN_PAGE(false) : "password required");
-      });
-      server.httpServer?.once("listening", () => {
-        setTimeout(() => {
-          const port = server.config.server.port ?? 5173;
-          const lines = [
-            "",
-            "  휴대폰 접속 (OpenReel + story-cut):",
-            ...lanAddresses().map((ip) => `    ${ip.startsWith("100.") ? "Tailscale     " : "같은 와이파이 "} https://${ip}:${port}/storycut/?token=${token}`),
-            `  접속 비밀번호: ${token}`,
-            "  처음 열면 '안전하지 않음' 경고가 나옵니다. [고급] → [계속 진행]을 누르세요. (이 PC가 만든 인증서라서 그렇습니다)",
-            "",
-          ];
-          server.config.logger.info(lines.join("\n"));
-        }, 300);
-      });
+      const token = installMiddlewares(server.middlewares as unknown as Middlewares);
+      if (token) announce(server.httpServer, server.config.server.port ?? 5173, token, (m) => server.config.logger.info(m));
+    },
+    configurePreviewServer(server) {
+      const token = installMiddlewares(server.middlewares as unknown as Middlewares);
+      if (token) announce(server.httpServer, server.config.preview.port ?? 4173, token, (m) => server.config.logger.info(m));
     },
   };
 }

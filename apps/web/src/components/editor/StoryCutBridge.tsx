@@ -65,28 +65,32 @@ async function fetchWithProgress(url: string, onProgress: (done: number, total: 
   return new Blob(chunks as BlobPart[], { type: res.headers.get("content-type") || "video/mp4" });
 }
 
+interface Progress { step: string; detail?: string; fraction?: number | null; error?: string }
+
 export function StoryCutBridge({ ready }: { ready: boolean }) {
-  const [status, setStatus] = useState<string>("");
-  const [link, setLink] = useState<StoryCutLink | null>(() => savedLink());
+  const [incoming] = useState<StoryCutLink | null>(() => readStoryCutLink(window.location.hash));
+  const [progress, setProgress] = useState<Progress | null>(() => (incoming ? { step: "편집기 준비 중...", fraction: null } : null));
+  const [link, setLink] = useState<StoryCutLink | null>(() => incoming ?? savedLink());
   const [hidden, setHidden] = useState(false);
   const [sending, setSending] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (!ready) return;
-    const incoming = readStoryCutLink(window.location.hash);
-    if (!incoming) return;
-    const key = `${incoming.base}|${incoming.job}`;
+    if (!ready || !incoming) return;
+    const key = `${incoming.base}|${incoming.job}|${attempt}`;
     if (handled.has(key)) return;
     handled.add(key);
     // Drop the parameters so a reload does not import again over the user's edits.
     window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#/editor`);
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(incoming));
     setLink(incoming);
+    const started = Date.now();
     void (async () => {
       try {
-        setStatus("story-cut 편집 초안을 불러오는 중...");
+        setProgress({ step: "1/3 편집 초안 받는 중...", fraction: null });
         const res = await fetch(`${incoming.base}api/jobs/${incoming.job}/edit.json`, { credentials: "include" });
         if (res.status === 401) throw new Error("story-cut 비밀번호가 필요합니다. story-cut 화면에서 먼저 로그인하세요.");
+        if (res.status === 502) throw new Error("PC의 story-cut 서버가 꺼져 있습니다. story-cut serve 창을 켜 주세요.");
         if (!res.ok) throw new Error(`편집 초안을 받지 못했습니다 (${res.status})`);
         const doc = parsePortableEdit(await res.text());
         const name = doc.project.media[0]?.name || "video.mp4";
@@ -101,29 +105,38 @@ export function StoryCutBridge({ ready }: { ready: boolean }) {
         const placeholder = useProjectStore.getState().project.mediaLibrary.items.find((m) => m.isPlaceholder);
         if (placeholder) {
           const mediaUrl = `${incoming.base}api/jobs/${incoming.job}/media${incoming.lite ? "?proxy=1" : ""}`;
+          setProgress({ step: "2/3 영상 받는 중...", fraction: 0 });
           const blob = await fetchWithProgress(mediaUrl, (done, total) => {
             const mb = (done / 1e6).toFixed(0);
-            setStatus(total ? `영상 받는 중... ${Math.round((done / total) * 100)}% (${mb} MB)` : `영상 받는 중... ${mb} MB`);
+            setProgress({
+              step: "2/3 영상 받는 중...",
+              detail: total ? `${mb} / ${(total / 1e6).toFixed(0)} MB` : `${mb} MB`,
+              fraction: total ? done / total : null,
+            });
           });
-          setStatus("영상을 연결하는 중...");
+          setProgress({ step: "3/3 영상 여는 중...", detail: "길이와 장면 정보를 읽고 있습니다", fraction: null });
           const type = blob.type.startsWith("video/") ? blob.type : "video/mp4";
           const fileName = incoming.lite ? name.replace(/\.[^.]+$/, "") + ".mp4" : name;
           const file = new File([blob], fileName, { type, lastModified: Date.now() });
           await runExclusive(async () => {
             const session = new EditingSession();
             const txn = session.beginTransaction();
-            await session.relinkMedia(placeholder.id, file);
+            // Waveforms are filled in later in the background; skipping them here opens a long video much sooner.
+            await session.relinkMedia(placeholder.id, file, {
+              waveform: false,
+              onStage: (stage) => setProgress({ step: "3/3 영상 여는 중...", detail: stage, fraction: null }),
+            });
             await session.commitTransaction(txn, "Link story-cut media");
           });
         }
-        setStatus("");
-        toast.success("story-cut 초안을 열었습니다", incoming.lite ? "가벼운 영상으로 열었습니다. 최종본은 'story-cut으로 보내기' 후 PC에서 만드세요." : undefined);
+        setProgress(null);
+        const secs = Math.round((Date.now() - started) / 1000);
+        toast.success("story-cut 초안을 열었습니다", `${secs}초 걸렸습니다.${incoming.lite ? " 가벼운 영상으로 열었습니다. 최종본은 'story-cut으로 보내기' 후 PC에서 만드세요." : ""}`);
       } catch (error) {
-        setStatus("");
-        toast.error("story-cut 초안을 열지 못했습니다", error instanceof Error ? error.message : String(error));
+        setProgress({ step: "열지 못했습니다", error: error instanceof Error ? error.message : String(error) });
       }
     })();
-  }, [ready]);
+  }, [ready, incoming, attempt]);
 
   const sendBack = async () => {
     if (!link) return;
@@ -145,17 +158,38 @@ export function StoryCutBridge({ ready }: { ready: boolean }) {
     }
   };
 
-  if (!link && !status) return null;
+  if (progress) {
+    const pct = progress.fraction == null ? null : Math.max(0, Math.min(1, progress.fraction));
+    return (
+      <div className="storycut-loading" role="dialog" aria-modal="false" aria-label="story-cut 불러오기">
+        <div className="storycut-loading-card">
+          <b>story-cut 초안 불러오기</b>
+          <span role="status">{progress.step}</span>
+          {!progress.error && (
+            <div className={`storycut-loading-bar ${pct == null ? "indeterminate" : ""}`}><i style={pct == null ? undefined : { width: `${pct * 100}%` }} /></div>
+          )}
+          {progress.detail && <span className="storycut-loading-detail">{progress.detail}</span>}
+          {progress.error && <span className="storycut-loading-error" role="alert">{progress.error}</span>}
+          {progress.error && link && (
+            <div className="storycut-loading-actions">
+              <button type="button" className="storycut-bridge-btn" onClick={() => { setProgress({ step: "다시 시도하는 중...", fraction: null }); setAttempt((n) => n + 1); }}>다시 시도</button>
+              <a className="storycut-bridge-btn" href={`${link.base}#/job/${link.job}`}>story-cut으로 돌아가기</a>
+              <button type="button" className="storycut-bridge-btn" onClick={() => setProgress(null)}>닫기</button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+  if (!link) return null;
   return (
     <div className="storycut-bridge" role="region" aria-label="story-cut">
-      {status ? (
-        <span className="storycut-bridge-status" role="status">{status}</span>
-      ) : hidden ? (
+      {hidden ? (
         <button type="button" className="storycut-bridge-btn" onClick={() => setHidden(false)} aria-label="story-cut 메뉴 보이기">SC</button>
       ) : (
         <>
           <button type="button" className="storycut-bridge-btn" disabled={sending} onClick={() => void sendBack()}>{sending ? "보내는 중..." : "story-cut으로 보내기"}</button>
-          <a className="storycut-bridge-btn" href={`${link!.base}#/job/${link!.job}`}>story-cut</a>
+          <a className="storycut-bridge-btn" href={`${link.base}#/job/${link.job}`}>story-cut</a>
           <button type="button" className="storycut-bridge-btn" onClick={() => setHidden(true)} aria-label="숨기기">×</button>
         </>
       )}

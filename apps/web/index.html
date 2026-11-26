@@ -14,7 +14,22 @@
     <title>OpenReel Video - Professional Video Editor</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div id="openreel-boot" style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0b0c0f;color:#e6e7ea;font:15px system-ui,-apple-system,'Segoe UI','Malgun Gothic',sans-serif;padding:24px;text-align:center">
+      <div style="width:40px;height:40px;border:3px solid #2bd49a;border-top-color:transparent;border-radius:50%;animation:openreel-spin 0.9s linear infinite"></div>
+      <div>OpenReel 불러오는 중... / Loading OpenReel...</div>
+      <div id="openreel-boot-slow" style="display:none;color:#9aa0aa;font-size:13px;max-width:340px">오래 걸리면 PC의 OpenReel 창(pnpm dev:remote)이 켜져 있는지, 같은 와이파이/Tailscale에 연결돼 있는지 확인하세요.</div>
+      <div id="openreel-boot-error" style="color:#ff6b7a;font-size:13px;max-width:360px;word-break:break-word"></div>
+      <style>@keyframes openreel-spin{to{transform:rotate(360deg)}}</style>
+    </div></div>
+    <script>
+      // Shown until React renders: a phone never sees a silent white page, and a startup error is visible.
+      (function () {
+        setTimeout(function () { var el = document.getElementById("openreel-boot-slow"); if (el) el.style.display = "block"; }, 12000);
+        function show(message) { var el = document.getElementById("openreel-boot-error"); if (el) el.textContent = "오류 / Error: " + message; }
+        window.addEventListener("error", function (event) { show(event.message || String(event.error)); });
+        window.addEventListener("unhandledrejection", function (event) { var r = event.reason; show((r && r.message) || String(r)); });
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

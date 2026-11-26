@@ -98,3 +98,12 @@
 .storycut-bridge-btn:disabled { opacity: .6; }
 .storycut-bridge-status { padding: 8px 12px; border-radius: 12px; background: rgba(20, 22, 28, .95); border: 1px solid var(--border, #333); color: var(--fg, #eee); font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
 .editor-compact .storycut-bridge-btn { min-height: 44px; min-width: 44px; font-size: 13px; }
+.storycut-loading { position: fixed; inset: 0; z-index: 70; display: flex; align-items: flex-start; justify-content: center; padding: calc(env(safe-area-inset-top, 0px) + 72px) 12px 12px; background: rgba(0, 0, 0, .45); }
+.storycut-loading-card { width: min(420px, 100%); display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 14px; background: rgba(20, 22, 28, .98); border: 1px solid var(--border, #333); color: var(--fg, #eee); font-size: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+.storycut-loading-bar { height: 8px; border-radius: 99px; background: rgba(255,255,255,.1); overflow: hidden; position: relative; }
+.storycut-loading-bar > i { display: block; height: 100%; width: 0; background: #2bd49a; transition: width .3s; }
+.storycut-loading-bar.indeterminate > i { width: 35%; position: absolute; animation: storycut-indeterminate 1.2s ease-in-out infinite; }
+@keyframes storycut-indeterminate { from { left: -35%; } to { left: 100%; } }
+.storycut-loading-detail { color: var(--fg-muted, #9aa0aa); font-size: 12px; }
+.storycut-loading-error { color: #ff6b7a; font-size: 13px; word-break: break-word; }
+.storycut-loading-actions { display: flex; flex-wrap: wrap; gap: 6px; }
