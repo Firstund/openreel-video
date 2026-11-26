@@ -5,6 +5,8 @@ import { stripFfmpegPlugin } from "./vite-plugins/strip-ffmpeg";
 import { pruneFontsPlugin } from "./vite-plugins/prune-fonts";
 import { desktopPreloadPlugin } from "./vite-plugins/desktop-preload";
 import { ortRuntimePlugin } from "./vite-plugins/ort-runtime";
+import basicSsl from "@vitejs/plugin-basic-ssl";
+import { isRemote, storyCutProxy, storyCutRemotePlugin } from "./vite-plugins/storycut-remote";
 
 const isDesktop = process.env.OPENREEL_DESKTOP === "1";
 
@@ -42,7 +44,12 @@ function desktopHtmlPlugin() {
 
 export default defineConfig({
   base: isDesktop ? "./" : "/",
-  plugins: [react(), desktopHtmlPlugin(), stripFfmpegPlugin(isDesktop), pruneFontsPlugin(isDesktop), desktopPreloadPlugin(isDesktop), ortRuntimePlugin()],
+  plugins: [
+    react(), desktopHtmlPlugin(), stripFfmpegPlugin(isDesktop), pruneFontsPlugin(isDesktop), desktopPreloadPlugin(isDesktop), ortRuntimePlugin(),
+    // `pnpm dev:remote`: phone access over the LAN / Tailscale (HTTPS + password + /storycut proxy).
+    storyCutRemotePlugin(),
+    ...(isRemote ? [basicSsl({ name: "openreel-dev" })] : []),
+  ],
   assetsInclude: ["**/*.wasm"],
   resolve: {
     // onnxruntime-web's own switch for "do not bundle the .wasm": every ONNX user fetches the one runtime under ort/ instead.
@@ -113,6 +120,9 @@ export default defineConfig({
     },
   },
   server: {
+    ...(isRemote ? { host: true } : {}),
+    // story-cut (the local auto-edit server) at /storycut/, see vite-plugins/storycut-remote.ts
+    proxy: storyCutProxy(),
     headers: {
       "Cross-Origin-Opener-Policy": "same-origin",
       "Cross-Origin-Embedder-Policy": "require-corp",

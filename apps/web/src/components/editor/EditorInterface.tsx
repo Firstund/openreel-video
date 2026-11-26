@@ -45,6 +45,7 @@ import { startAudioRackSync } from "../../services/audio-rack-sync";
 import { startAudioOutputService } from "../../services/audio-output-service";
 import { startLinkedCompHost } from "../../services/linked-comp-host";
 import "./editor-responsive.css";
+import { StoryCutBridge } from "./StoryCutBridge";
 
 // Spotlight tours: loaded on the web build (first-run auto-start) or when a tour is requested; never on the desktop first-paint path.
 const TourHost = React.lazy(() => import("./tour/TourHost"));
@@ -563,6 +564,7 @@ export const EditorInterface: React.FC = () => {
       className={`editor-shell w-full h-full bg-bg text-fg overflow-hidden font-sans select-none relative z-20 flex flex-col ${compact ? "editor-compact" : ""} ${phone ? "editor-phone" : ""}`}
     >
       <Toolbar />
+      <StoryCutBridge ready={initialized} />
       <ProjectLockBanner />
       <MissingFontsBanner />
 

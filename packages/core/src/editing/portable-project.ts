@@ -176,7 +176,7 @@ function portableMediaMetadata(metadata: MediaMetadata): MediaMetadata {
   for (const key of PORTABLE_MEDIA_METADATA_KEYS) {
     const value = metadata[key];
     if (value !== undefined) {
-      (result as Record<string, unknown>)[key] = value;
+      (result as unknown as Record<string, unknown>)[key] = value;
     }
   }
   return result;

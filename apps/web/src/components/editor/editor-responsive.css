@@ -90,3 +90,11 @@
   .workspace-text-animation-phase .workspace-inspector-value,
   .workspace-text-animation-phase .workspace-inspector-value input { min-height: 44px; height: 44px; }
 }
+
+/* story-cut link bar (StoryCutBridge): small, out of the way, large enough to tap. */
+.storycut-bridge { position: fixed; z-index: 60; right: max(8px, env(safe-area-inset-right)); bottom: calc(env(safe-area-inset-bottom, 0px) + 84px); display: flex; gap: 6px; align-items: center; pointer-events: none; }
+.storycut-bridge > * { pointer-events: auto; }
+.storycut-bridge-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; min-width: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border, #333); background: rgba(20, 22, 28, .92); color: var(--fg, #eee); font-size: 12px; font-weight: 600; text-decoration: none; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+.storycut-bridge-btn:disabled { opacity: .6; }
+.storycut-bridge-status { padding: 8px 12px; border-radius: 12px; background: rgba(20, 22, 28, .95); border: 1px solid var(--border, #333); color: var(--fg, #eee); font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+.editor-compact .storycut-bridge-btn { min-height: 44px; min-width: 44px; font-size: 13px; }

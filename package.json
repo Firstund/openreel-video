@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "pnpm --filter @openreel/web dev",
+    "dev:remote": "pnpm --filter @openreel/web dev:remote",
     "build:wasm": "pnpm --filter @openreel/core build:wasm",
     "build": "pnpm build:wasm && pnpm --filter @openreel/web build",
     "preview": "pnpm --filter @openreel/web preview",

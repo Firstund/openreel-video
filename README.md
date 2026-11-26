@@ -122,6 +122,60 @@ pnpm preview
 
 ---
 
+## 휴대폰에서 쓰기 (story-cut 연동)
+
+> 이 포크([Firstund/openreel-video](https://github.com/Firstund/openreel-video))에 추가된 기능입니다. 자동 편집 초안은 [story-cut](https://github.com/Firstund/story-cut)이 PC에서 만듭니다.
+
+OpenReel은 브라우저 안에서 동작하는 편집기라, 폰에서 열면 폰이 편집을 합니다. 폰 화면용 편집 UI(탭해서 클립 선택, 두 손가락으로 확대, 큰 트림 손잡이, 아래쪽 도구 막대, 폰용 내보내기)는 이미 들어 있습니다. 다만 폰 브라우저는 **https 주소**에서만 영상 편집 기능을 열어 주기 때문에, PC에서 아래처럼 켜야 합니다.
+
+### Windows PC에서 준비 (처음 한 번)
+
+```powershell
+cd D:\_ForBroadcast\openreel-video
+git pull
+pnpm install
+```
+
+### 켜기
+
+```powershell
+cd D:\_ForBroadcast\openreel-video
+pnpm dev:remote
+```
+
+창에 이런 줄이 나옵니다.
+
+```
+  휴대폰 접속 (OpenReel + story-cut):
+    같은 와이파이  https://192.168.0.12:5173/storycut/?token=AbCdEf12345
+    Tailscale      https://100.101.102.103:5173/storycut/?token=AbCdEf12345
+  접속 비밀번호: AbCdEf12345
+```
+
+- 폰 브라우저에 그 주소를 입력합니다. **"연결이 비공개로 설정되어 있지 않습니다"** 경고가 나오면 **고급 → (주소)로 이동**을 누릅니다. PC가 직접 만든 인증서라서 처음 한 번 나옵니다.
+- `/storycut/`은 PC의 story-cut 화면입니다. story-cut이 꺼져 있으면 켜는 방법이 안내됩니다. ([story-cut 휴대폰 안내](https://github.com/Firstund/story-cut#휴대폰에서-쓰기))
+- 편집기만 열려면 주소 끝의 `/storycut/`을 빼고 `https://192.168.0.12:5173/?token=...` 로 엽니다.
+- 처음 켜면 Windows 방화벽 창이 뜰 수 있습니다. **개인 네트워크** 체크 후 **허용**.
+- PC에서 쓸 때는 지금처럼 `pnpm dev` 그대로 쓰면 됩니다 (비밀번호 없음, 이 PC에서만 열림).
+
+### 집 밖에서 (Tailscale)
+
+1. PC와 폰에 [Tailscale](https://tailscale.com/download)을 설치하고 같은 계정으로 로그인합니다.
+2. `pnpm dev:remote`를 켜면 `Tailscale  https://100.x.y.z:5173/...` 줄이 나옵니다. 그 주소를 폰에서 엽니다.
+3. 포트 열기나 공유기 설정은 필요 없습니다. 내 기기끼리만 연결됩니다.
+
+### story-cut 결과를 폰에서 다듬기
+
+1. story-cut 화면의 결과에서 **OpenReel (폰용 가벼운 영상)** 을 누르면, 편집기가 열리고 초안과 영상이 자동으로 들어갑니다. (Edit JSON 메뉴나 Relink를 손으로 할 필요 없음)
+2. 클립을 탭해서 고르고, 양쪽 초록 손잡이로 길이를 조절합니다. 두 손가락으로 타임라인을 확대/축소합니다.
+3. 다 고쳤으면 오른쪽 아래 **story-cut으로 보내기** → story-cut 화면에서 **PC에서 MP4 만들기**. 폰에서 고친 내용이 원본 화질로 PC에서 만들어집니다.
+   - 폰에서 바로 **Export**를 눌러도 되지만, 가벼운 영상(540p)으로 열었다면 결과도 그 화질입니다.
+
+### 보안
+
+- `pnpm dev:remote`는 비밀번호가 있어야 열립니다. 비밀번호는 story-cut과 같은 것을 씁니다 (`C:\Users\내이름\.story-cut\token`).
+- 개발 서버라서 인터넷에 공개(포트 포워딩)하지 마세요. 집 밖에서는 Tailscale을 쓰세요.
+
 ## Browser Requirements
 
 | Browser | Version | Status |
