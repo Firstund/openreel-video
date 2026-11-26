@@ -80,6 +80,31 @@ describe("portable edit boundary", () => {
     expect(materializePortableEdit(edit, before).project.mediaLibrary.items[0].metadata.soundLibraryId).toBe("music-cinematic-bed");
     expect(materializePortableEdit(edit, { ...before, mediaLibrary: { items: [] } }).project.mediaLibrary.items[0].metadata.soundLibraryId).toBeUndefined();
   });
+  it("strips sourceColor and other runtime metadata so linking a file does not fail portable validation", () => {
+    const before = project();
+    const sourceColor = { primaries: "bt709" as const, transfer: "bt709" as const, matrix: "bt709" as const, fullRange: false };
+    before.mediaLibrary.items[0] = {
+      ...before.mediaLibrary.items[0],
+      metadata: {
+        ...before.mediaLibrary.items[0].metadata,
+        sourceColor,
+        pixelAspectRatio: 1,
+        startTimecode: 0,
+        startTimecodeText: "00:00:00:00",
+        hasVideo: true,
+        hasAudio: true,
+      },
+    };
+    const edit = createPortableEdit(before);
+    expect(edit.project.media[0].metadata).toEqual({
+      ...project().mediaLibrary.items[0].metadata,
+      hasVideo: true,
+      hasAudio: true,
+    });
+    expect("sourceColor" in edit.project.media[0].metadata).toBe(false);
+    const restored = materializePortableEdit(parsePortableEdit(JSON.stringify(edit)), before);
+    expect(restored.project.mediaLibrary.items[0].metadata.sourceColor).toEqual(sourceColor);
+  });
   it("preserves typed filter identity in shared edits and presets while rejecting unknown metadata", () => {
     const before = project();
     const metadata = { filterPreset: { presetId: "cinematic-noir", applicationId: "filter-application", index: 0 } };

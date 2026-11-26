@@ -162,12 +162,23 @@ export function parsePortableEdit(json: string): PortableEdit {
   return doc;
 }
 
-// UI provenance stays in saved projects. Keep the closed version-3 metadata
-// contract readable by existing clients when sharing a portable edit.
+// Keep the closed version-3 metadata contract. Runtime-only fields (sourceColor,
+// timecode, pixel aspect, VR, stock/library provenance, etc.) stay in the
+// saved project but must not appear on a portable edit — otherwise
+// validatePortableEdit throws "unsupported property" after a media file is linked.
+const PORTABLE_MEDIA_METADATA_KEYS = [
+  "duration", "width", "height", "frameRate", "codec", "sampleRate", "channels",
+  "fileSize", "audioTrackCount", "audioStreamChannels", "hasVideo", "hasAudio",
+] as const;
+
 function portableMediaMetadata(metadata: MediaMetadata): MediaMetadata {
-  const result = { ...metadata };
-  delete result.soundLibraryId;
-  delete result.recordedTake;
+  const result = {} as MediaMetadata;
+  for (const key of PORTABLE_MEDIA_METADATA_KEYS) {
+    const value = metadata[key];
+    if (value !== undefined) {
+      (result as Record<string, unknown>)[key] = value;
+    }
+  }
   return result;
 }
 
