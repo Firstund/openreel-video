@@ -6,6 +6,8 @@
  * - Asks for a password (the same token story-cut uses, saved in ~/.story-cut/token) before serving anything.
  * - `/storycut/` is proxied to a local `story-cut serve` (port 8765 by default), so the phone only needs
  *   one address and OpenReel can load story-cut results without CORS or mixed-content problems.
+ * - `/lmstudio/` is proxied to LM Studio's OpenAI-compatible server on the PC (port 1234, LMSTUDIO_PORT), so the
+ *   AI assistant works from a phone: the phone cannot reach the PC's localhost itself. Behind the same password.
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -16,6 +18,7 @@ import type { Plugin, ProxyOptions } from "vite";
 
 export const isRemote = process.env.OPENREEL_REMOTE === "1";
 export const storyCutPort = Number(process.env.STORYCUT_PORT || 8765);
+export const lmStudioPort = Number(process.env.LMSTUDIO_PORT || 1234);
 const COOKIE = "sc_token";
 
 export function readAccessToken(): string {
@@ -128,6 +131,14 @@ function installMiddlewares(middlewares: Middlewares): string | null {
     const auth = req.headers.authorization || "";
     const bearer = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
     if (same(cookieValue(req, COOKIE), token) || (bearer && same(bearer, token))) {
+      if (url.pathname === "/__openreel_ai") {
+        // The AI client sends its requests without cookies (credentials: "omit"), so it authenticates to
+        // /lmstudio/ with this password as a Bearer key. Only a signed-in page can read it.
+        res.setHeader("Content-Type", "application/json");
+        res.setHeader("Cache-Control", "no-store");
+        res.end(JSON.stringify({ baseUrl: "/lmstudio/v1", key: token }));
+        return;
+      }
       next();
       return;
     }
@@ -176,6 +187,29 @@ export function storyCutRemotePlugin(): Plugin {
 
 export function storyCutProxy(): Record<string, ProxyOptions> {
   return {
+    "/lmstudio/": {
+      target: `http://127.0.0.1:${lmStudioPort}`,
+      changeOrigin: true,
+      ws: false,
+      rewrite: (p) => p.replace(/^\/lmstudio/, "") || "/",
+      // Local models can take minutes on a long prompt.
+      timeout: 10 * 60 * 1000,
+      proxyTimeout: 10 * 60 * 1000,
+      configure: (proxy) => {
+        proxy.on("proxyReq", (proxyReq) => {
+          // The password is for this server, not for LM Studio.
+          proxyReq.removeHeader("authorization");
+          proxyReq.removeHeader("cookie");
+        });
+        proxy.on("error", (_err, _req, res) => {
+          const out = res as ServerResponse;
+          if (!out.headersSent && typeof out.writeHead === "function") {
+            out.writeHead(502, { "Content-Type": "application/json; charset=utf-8" });
+            out.end(JSON.stringify({ error: { message: `LM Studio (port ${lmStudioPort}) is not running on the PC` } }));
+          }
+        });
+      },
+    },
     "/storycut/": {
       target: `http://127.0.0.1:${storyCutPort}`,
       changeOrigin: true,

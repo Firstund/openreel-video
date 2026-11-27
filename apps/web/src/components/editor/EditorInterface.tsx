@@ -46,6 +46,9 @@ import { startAudioOutputService } from "../../services/audio-output-service";
 import { startLinkedCompHost } from "../../services/linked-comp-host";
 import "./editor-responsive.css";
 import { StoryCutBridge } from "./StoryCutBridge";
+import { SimpleMobileEditor } from "./simple/SimpleMobileEditor";
+import { useSimpleModeActive, useSimpleModeStore, useTouchPhone } from "../../stores/simple-mode-store";
+import { useT } from "../../i18n";
 
 // Spotlight tours: loaded on the web build (first-run auto-start) or when a tour is requested; never on the desktop first-paint path.
 const TourHost = React.lazy(() => import("./tour/TourHost"));
@@ -170,6 +173,10 @@ registerSmoothKeyframeRefresh(refreshSmoothKeyframesAfterEdit);
 export const EditorInterface: React.FC = () => {
   const compact = useCompactEditor();
   const phone = usePhoneEditor();
+  // Touch phones get the portrait simple mode (components/editor/simple) unless the user picked the full editor.
+  const simpleMode = useSimpleModeActive();
+  const touchPhone = useTouchPhone();
+  const tr = useT();
   const tourRequested = useTourHostRequested();
   const tourHostWanted = tourRequested || (typeof window !== "undefined" && window.openreel?.platform !== "desktop");
   const [compactPanel, setCompactPanel] = useState<"timeline" | "media" | "inspector" | "chat">("timeline");
@@ -533,6 +540,8 @@ export const EditorInterface: React.FC = () => {
     );
   }
 
+  if (simpleMode) return <SimpleMobileEditor ready={initialized} />;
+
   // ── Render ───────────────────────────────────────────────────────
   // Grid template uses inline CSS for the resizable columns. The CSS
   // variables `--media-w`, `--inspector-w`, `--tl-height` are kept in
@@ -565,6 +574,7 @@ export const EditorInterface: React.FC = () => {
     >
       <Toolbar />
       <StoryCutBridge ready={initialized} />
+      {touchPhone && <button type="button" className="simple-mode-return" onClick={() => useSimpleModeStore.getState().setEnabled(true)}>{tr("mode.toSimple")}</button>}
       <ProjectLockBanner />
       <MissingFontsBanner />
 

@@ -5,6 +5,7 @@ import { useProjectStore } from "../../stores/project-store";
 import { useUIStore } from "../../stores/ui-store";
 import { useInspectorNavigationStore } from "../../stores/inspector-navigation-store";
 import { useTimelineStore } from "../../stores/timeline-store";
+import { useSimpleModeStore } from "../../stores/simple-mode-store";
 import type { Clip, Keyframe } from "@openreel/core";
 // Compile the real lazy module during collection, outside DOM readiness waits.
 import "./mobile/MobileEditorTools";
@@ -60,6 +61,8 @@ function resize(width: number) {
 describe("compact editing workspace", () => {
   const originalWidth = window.innerWidth;
   beforeEach(() => {
+    // These cover the full editor; the phone simple mode has its own tests.
+    useSimpleModeStore.setState({ enabled: false });
     coarsePointer = true;
     hover = false;
     useTimelineStore.setState({ playbackLockedReason: null });

@@ -81,7 +81,8 @@ interface ChatState {
   currentConversationId: string | null;
   conversationStartedAt: number | null;
 
-  send: (text: string) => Promise<void>;
+  /** `options.context` goes to the model with the message but is not shown in the chat. */
+  send: (text: string, options?: { context?: string }) => Promise<void>;
   resolveConfirm: (decision: ConfirmDecision) => void;
   stop: () => void;
   undoLastTurn: () => Promise<void>;
@@ -140,6 +141,17 @@ function saveConversationSnapshot(state: ChatState): void {
   });
 }
 
+/**
+ * Optional per-surface tuning. The phone simple mode offers a small tool set (local 8B models cope better
+ * with fewer tools) and asks for short Korean answers. Unset = the full editor's behaviour.
+ */
+export interface ChatPreferences {
+  readonly toolNames?: readonly string[];
+  readonly systemSuffix?: string;
+}
+let chatPreferences: ChatPreferences = {};
+export function setChatPreferences(prefs: ChatPreferences): void { chatPreferences = prefs; }
+
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   status: "idle",
@@ -154,7 +166,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   currentConversationId: null,
   conversationStartedAt: null,
 
-  send: async (text: string) => {
+  send: async (text: string, options?: { context?: string }) => {
     // First, so the guards and the state they protect below still run in one synchronous stretch.
     const { runTurn, runExclusive, makeDirectBYOKClient, validateAIEndpoint, EditingSession, editingToolDefs, editingToolReadOnly, executeEditingTool, EDITING_SYSTEM } = await loadChatRuntime();
     const trimmed = text.trim();
@@ -211,7 +223,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     set((state) => ({
       messages: [...state.messages, userMessage, assistantMessage],
-      conversation: [...state.conversation, { role: "user", content: trimmed }],
+      conversation: [...state.conversation, { role: "user", content: options?.context ? `${options.context}\n\n${trimmed}` : trimmed }],
       status: "running",
       error: null,
       abortController: controller,
@@ -293,7 +305,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ status: "error", error: error instanceof Error ? error.message : "Invalid connection settings", abortController: null });
       return;
     }
-    const tools = editingToolDefs(provider === "anthropic" ? "anthropic" : "openai");
+    const allTools = editingToolDefs(provider === "anthropic" ? "anthropic" : "openai");
+    const allowed = chatPreferences.toolNames ? new Set(chatPreferences.toolNames) : null;
+    const toolName = (tool: unknown) => { const t = tool as { name?: string; function?: { name?: string } }; return t.name ?? t.function?.name ?? ""; };
+    const tools = allowed ? allTools.filter((tool) => allowed.has(toolName(tool))) : allTools;
+    const system = chatPreferences.systemSuffix ? `${EDITING_SYSTEM}\n${chatPreferences.systemSuffix}` : EDITING_SYSTEM;
     const autoConfirm = useSettingsStore.getState().agentAutoConfirm;
     const dryRun = useSettingsStore.getState().agentDryRun;
 
@@ -303,7 +319,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         host,
         llm,
         tools,
-        system: EDITING_SYSTEM,
+        system,
         messages: get().conversation,
         execute: executeEditingTool,
         readOnly: editingToolReadOnly,

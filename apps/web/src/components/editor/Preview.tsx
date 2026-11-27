@@ -2,6 +2,7 @@ import { selectVoiceOverPlaybackMuted, useVoiceOverStore } from "../../services/
 import { clipNeedsFrameProcessing, preparePreviewFrame, renderOverlayLayerWithEffects } from "./preview/frame-processing";
 import { inputTransformForClip } from "./preview/clip-input-transform";
 import { usePhoneEditor } from "../../hooks/usePhoneEditor";
+import { useSimpleModeActive } from "../../stores/simple-mode-store";
 import { MobilePreviewTransport } from "./mobile/MobilePreviewTransport";
 import { Button as ShadcnButton, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuCheckboxItem, DropdownMenuSeparator, DropdownMenuLabel, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from "@openreel/ui";
 import { EmptyProjectStart } from "./EmptyProjectStart";
@@ -842,6 +843,8 @@ interface ClipWithPlaceholder {
 
 export const Preview: React.FC = () => {
   const phone = usePhoneEditor();
+  // The phone simple mode draws its own big transport under the preview.
+  const simpleMode = useSimpleModeActive();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const videoAreaRef = useRef<HTMLDivElement>(null);
@@ -9192,7 +9195,7 @@ export const Preview: React.FC = () => {
         {exportState.isExporting && <ExportProgressOverlay progress={exportState.progress} phase={exportState.phase} width={videoAreaSize.width} height={videoAreaSize.height} />}
       </div>
 
-      {phone ? <MobilePreviewTransport position={playheadPosition} duration={actualEndTime} playing={isPlaying} lockedReason={playbackLockedReason ?? null} onTogglePlayback={() => { togglePlayback(); }} onFullscreen={handleFullscreen}>{transportControls}{previewHeader}</MobilePreviewTransport> : transportControls}
+      {phone && simpleMode ? null : phone ? <MobilePreviewTransport position={playheadPosition} duration={actualEndTime} playing={isPlaying} lockedReason={playbackLockedReason ?? null} onTogglePlayback={() => { togglePlayback(); }} onFullscreen={handleFullscreen}>{transportControls}{previewHeader}</MobilePreviewTransport> : transportControls}
     </div>
   );
 };

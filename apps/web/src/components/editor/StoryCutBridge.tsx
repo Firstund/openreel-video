@@ -7,17 +7,68 @@
  * Nothing runs unless the link carries `storycut=`.
  */
 import { useEffect, useState } from "react";
+import { create } from "zustand";
 import { createPortableEdit, materializePortableEdit, parsePortableEdit } from "@openreel/core/editing/portable-project";
 import { useProjectStore } from "../../stores/project-store";
 import { useChatStore } from "../../stores/chat-store";
 import { toast } from "../../stores/notification-store";
 import { EditingSession } from "../../services/agent/editing-session";
 import { runExclusive } from "../../services/agent/host-singleton";
+import { t } from "../../i18n";
 
 const SESSION_KEY = "openreel.storycut";
 const handled = new Set<string>();
 
-interface StoryCutLink { job: string; base: string; lite: boolean }
+export interface StoryCutLink { job: string; base: string; lite: boolean }
+
+/** The story-cut job this editor came from, and whether the timeline changed since it was last sent back. */
+interface StoryCutState { link: StoryCutLink | null; sentAt: number | null; dirty: boolean; sending: boolean }
+export const useStoryCutStore = create<StoryCutState>(() => ({ link: null, sentAt: null, dirty: false, sending: false }));
+// What story-cut renders: clips and captions. Autosave and other bookkeeping must not count as an edit.
+function editSignature(): string {
+  const { timeline } = useProjectStore.getState().project;
+  const clips = timeline.tracks.map((tr) => `${tr.id}:${tr.hidden ? 1 : 0}${tr.muted ? 1 : 0}:` + tr.clips.map((c) => `${c.id},${c.startTime},${c.duration},${c.inPoint},${c.outPoint},${c.volume},${c.speed ?? 1}`).join(";")).join("|");
+  const subs = (timeline.subtitles ?? []).map((x) => `${x.id},${x.startTime},${x.endTime},${x.text}`).join("|");
+  return `${clips}#${subs}`;
+}
+let sentSignature = "";
+let watchingEdits = false;
+function watchEdits(): void {
+  if (watchingEdits) return;
+  watchingEdits = true;
+  useProjectStore.subscribe((state, prev) => {
+    if (state.project === prev.project || !useStoryCutStore.getState().sentAt) return;
+    const dirty = editSignature() !== sentSignature;
+    if (dirty !== useStoryCutStore.getState().dirty) useStoryCutStore.setState({ dirty });
+  });
+}
+
+/** POST the current timeline to story-cut (it replaces the job's edit and invalidates its old render). */
+export async function sendToStoryCut(): Promise<boolean> {
+  const link = useStoryCutStore.getState().link;
+  if (!link) return false;
+  useStoryCutStore.setState({ sending: true });
+  try {
+    const doc = createPortableEdit(useProjectStore.getState().getFullProject());
+    const res = await fetch(`${link.base}api/jobs/${link.job}/edit-json`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(doc),
+    });
+    if (!res.ok) throw new Error(`story-cut answered ${res.status}`);
+    sentSignature = editSignature();
+    watchEdits();
+    useStoryCutStore.setState({ sentAt: Date.now(), dirty: false });
+    toast.success(t("sc.sentTitle"), t("sc.sentBody"));
+    return true;
+  } catch (error) {
+    toast.error(t("sc.failed"), error instanceof Error ? error.message : String(error));
+    return false;
+  } finally {
+    useStoryCutStore.setState({ sending: false });
+  }
+}
 
 export function readStoryCutLink(hash: string): StoryCutLink | null {
   const query = hash.split("?")[1];
@@ -67,12 +118,15 @@ async function fetchWithProgress(url: string, onProgress: (done: number, total: 
 
 interface Progress { step: string; detail?: string; fraction?: number | null; error?: string }
 
-export function StoryCutBridge({ ready }: { ready: boolean }) {
+/** Loads a linked draft (with an on-screen progress card) and, unless `bar` is false, shows the send-back bar. */
+export function StoryCutBridge({ ready, bar = true }: { ready: boolean; bar?: boolean }) {
   const [incoming] = useState<StoryCutLink | null>(() => readStoryCutLink(window.location.hash));
   const [progress, setProgress] = useState<Progress | null>(() => (incoming ? { step: "편집기 준비 중...", fraction: null } : null));
-  const [link, setLink] = useState<StoryCutLink | null>(() => incoming ?? savedLink());
+  const link = useStoryCutStore((s) => s.link);
+  const sending = useStoryCutStore((s) => s.sending);
+  const setLink = (value: StoryCutLink | null) => useStoryCutStore.setState({ link: value });
+  useEffect(() => { if (!useStoryCutStore.getState().link) setLink(incoming ?? savedLink()); }, [incoming]);
   const [hidden, setHidden] = useState(false);
-  const [sending, setSending] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -138,26 +192,6 @@ export function StoryCutBridge({ ready }: { ready: boolean }) {
     })();
   }, [ready, incoming, attempt]);
 
-  const sendBack = async () => {
-    if (!link) return;
-    setSending(true);
-    try {
-      const doc = createPortableEdit(useProjectStore.getState().getFullProject());
-      const res = await fetch(`${link.base}api/jobs/${link.job}/edit-json`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(doc),
-      });
-      if (!res.ok) throw new Error(`story-cut answered ${res.status}`);
-      toast.success("story-cut으로 보냈습니다", "story-cut 화면에서 'PC에서 MP4 만들기'를 누르면 원본 화질로 만듭니다.");
-    } catch (error) {
-      toast.error("보내지 못했습니다", error instanceof Error ? error.message : String(error));
-    } finally {
-      setSending(false);
-    }
-  };
-
   if (progress) {
     const pct = progress.fraction == null ? null : Math.max(0, Math.min(1, progress.fraction));
     return (
@@ -181,14 +215,14 @@ export function StoryCutBridge({ ready }: { ready: boolean }) {
       </div>
     );
   }
-  if (!link) return null;
+  if (!link || !bar) return null;
   return (
     <div className="storycut-bridge" role="region" aria-label="story-cut">
       {hidden ? (
         <button type="button" className="storycut-bridge-btn" onClick={() => setHidden(false)} aria-label="story-cut 메뉴 보이기">SC</button>
       ) : (
         <>
-          <button type="button" className="storycut-bridge-btn" disabled={sending} onClick={() => void sendBack()}>{sending ? "보내는 중..." : "story-cut으로 보내기"}</button>
+          <button type="button" className="storycut-bridge-btn" disabled={sending} onClick={() => void sendToStoryCut()}>{sending ? t("sc.sending") : t("sc.sendBack")}</button>
           <a className="storycut-bridge-btn" href={`${link.base}#/job/${link.job}`}>story-cut</a>
           <button type="button" className="storycut-bridge-btn" onClick={() => setHidden(true)} aria-label="숨기기">×</button>
         </>
